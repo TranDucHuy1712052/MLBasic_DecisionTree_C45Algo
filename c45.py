@@ -9,9 +9,9 @@ import math
 #   attCont:    type of attributes (continous or discrete?)
 class DataPackage:
 
-    def __init__(self, dataPath, namesPath):
+    def __init__(self, dataPath, despPath):
         self.dataPath = dataPath
-        self.namesPath = namesPath
+        self.despPath = despPath
         self.data = []
         self.classes = []
         self.attName = []
@@ -19,40 +19,51 @@ class DataPackage:
         self.attCont = []
 
     def readData(self):
-            # read class and atts
-            with open(self.namesPath, "r") as file:
-                # first row is list of classes
-                classes = file.readline()
-                self.classes = [x.strip() for x in classes.split(",")]
-                # first 2 params of each row is name and type of attribute
-                # - continous: "<name> : true"
-                # - discrete: "<name> : false". Add 1 more line to contain values
-                for line in file:
-                    [name, isCont] = [x.strip() for x in line.split(":")]
-                    isCont = bool(isCont)
-                    self.attName.append(name)          
-                    self.attCont.append(isCont)
 
-                    if (isCont):
-                        valLine = file.readline()               
-                        values = [valLine.strip() for x in values.split(",")]
-                        self.attVal[name] = values
-                    else:
-                        self.attVal[name] = []             # it's continous, does not need a specific value
+        print("Reading data...")
+        # read class and atts
+        with open(self.despPath, "r") as file:
+            # first row is list of classes
+            classes = next(file)
+            self.classes = [x.strip() for x in classes.split(",")]
+            print(self.classes)
+            # first 2 params of each row is name and type of attribute
+            # - continous: "<name> : true"
+            # - discrete: "<name> : false". Add 1 more line to contain values
+            for line in file:
+                [name, isCont] = [x.strip() for x in line.split(":")]
+                isCont = bool(isCont)
+                self.attName.append(name)          
+                self.attCont.append(isCont)
 
-            # read data file
-            with open(self.dataPath, "r") as file:
-                for line in file:
-                    row = [x.strip() for x in line.split(",")]
-                    if row != [] or row != [""]:
-                        self.data.append(row)
+                if (not isCont):
+                    valLine = next(file)             
+                    values = [valLine.strip() for x in valLine.split(",")]
+                    self.attVal[name] = values
+                else:
+                    self.attVal[name] = []             # it's continous, does not need a specific value
+
+        print("Names", self.attName)
+        print("Values", self.attVal)
+        print("isContinous", self.attCont)
+
+        # read data file
+        with open(self.dataPath, "r") as file:
+            for line in file:
+                row = [x.strip() for x in line.split(",")]
+                if row != [] and row != [''] and (len(row) != 0):
+                    self.data.append(row)
+        print("\n ----------- \n")
+
     
     # transfer all data into float (if continous)
     def preprocess(self):
         for i in range(len(self.data)):
             for att_idx in range(len(self.attName)):
                 if (self.attCont[att_idx]):
+                    #print(self.data[i])
                     self.data[i][att_idx] = float(self.data[i][att_idx])
+                    
 
 # ====================================================
 
@@ -93,11 +104,12 @@ class DecisionTree_C45:
             idx = self.class_idx(row[-1])
             classCount[idx] += 1
 
-        en = 0
+        en = float(0.0)
         # pi * log2(pi) ; pi = attCount[i] / N
         for c in classCount:
-            pi = c / n
-            en += pi * math.log2(pi)
+            p = float( float(c) / n)            # must convert to float
+            if (p != 0):
+                en += (-1.0) * p * math.log(p, 2)
 
         return en
 
@@ -107,7 +119,7 @@ class DecisionTree_C45:
     # VD: data = [1,2,3,4]; subsets = [ [1,2] , [3,4] ]
     def Entropy_with_subset(self, data, subsets):
         n = len(data)
-        weights = [(len(subset) / n) for subset in subsets]
+        weights = [float( float(len(subset)) / n) for subset in subsets]
         e = 0
          # entropy of each subset
         for i in range(len(weights)):
@@ -123,6 +135,9 @@ class DecisionTree_C45:
     # find best attribute
     # atts = list of the attributes that are not processed
     def Split_data(self, data, atts):
+        if (len(atts) == 0):
+            return None
+
         subsets = []
         best_entropy = float("inf")            ## smallest entropy (default: inf)
         best_att = None            
@@ -153,12 +168,14 @@ class DecisionTree_C45:
 
                     tmp_subsets = [smallerData, largerData]
                     e = self.Entropy_with_subset(data, tmp_subsets)
+                    
                 
-                    if (e < best_entropy):
+                    if (e < best_entropy):      
                         best_entropy = e
                         subsets = tmp_subsets
                         best_threshold = threshold
                         best_att = att
+                        
             else:
                 ## discrete attribute
                 attValues = self.data_package.attVal[att_idx]
@@ -191,17 +208,19 @@ class DecisionTree_C45:
     def Recursive_Build_Tree(self, data, atts):
         
         if (len(data) == 0) :
-            return 
+            return
         # only one class left => Leaf node
         elif (self.OnlyOneClass(data)):
             className = data[0][-1]
             node = Node(className, True, 0)        
-            print("Leaf node : class " + className)
             return node
+        # no attributes left but still not really clean?
+        elif (len(atts) == 0) :
+            node = Node("Mixed", True, 0)
         else:
             # find best attribute
             [best_att, best_entropy, best_threshold, subsets] = self.Split_data(data, atts)
-            print("Attribute : " + best_att + " with e = " + best_entropy + " and threshold = " + best_threshold)                       #debug
+           ## print("Attribute : ", best_att, " with e = ", best_entropy, " and threshold = ", best_threshold)                       #debug
             remainingAtts = atts[:]
             remainingAtts.remove(best_att)          
             node = Node(best_att, False, best_threshold)
@@ -218,12 +237,15 @@ class DecisionTree_C45:
 
     ## ================= OUTPUT ====================
     def Print_Tree(self):
-        self.Recursive_Print_Tree(self.rootNode)
+        print("Decision tree : ")
+        self.Recursive_Print_Tree(self.rootNode, 0)
         
-    def Recursive_Print_Tree(self, node):
-        node.printNode()
+    def Recursive_Print_Tree(self, node, depth):
+        if (not node):
+            return
+        node.printNode(depth)
         for child in node.children:
-            self.Recursive_Print_Tree(child)
+            self.Recursive_Print_Tree(child, depth + 1)
 
 
 class Node:
@@ -233,8 +255,11 @@ class Node:
         self.threshold = threshold
         self.children = []
     
-    def printNode(self):
-        print("Name = " + self.name + "; isLeaf = " + self.isLeaf + "; Threshold = " + self.threshold)
+    def printNode(self, depth):
+        tmp_str = ""
+        for i in range(depth):
+            tmp_str += "+"    
+        print(tmp_str, "Name = {0}, isLeaf = {1}, threshold = {2}".format( self.name, self.isLeaf, self.threshold))
 
 
 
@@ -243,7 +268,7 @@ class Node:
 
 ## MAIN 
 
-data = DataPackage("./data/iris/iris.data", "./data/iris/iris.names")
+data = DataPackage("./data/iris/iris.data", "./data/iris/iris.desp")
 data.readData()
 data.preprocess()
 
